@@ -37,13 +37,8 @@ impl winit::application::ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.window.is_none() {
             let monitors: Vec<_> = event_loop.available_monitors().collect();
-            println!("DEBUG: Found {} monitors", monitors.len());
             let primary_monitor = monitors.first().unwrap();
             let monitor_size = primary_monitor.size();
-            println!("DEBUG: Primary monitor size: {:?}", monitor_size);
-            if let Some(name) = primary_monitor.name() {
-                println!("DEBUG: Primary monitor name: {}", name);
-            }
             self.monitor_size = monitor_size;
             
             let window_size = winit::dpi::PhysicalSize::new(
@@ -59,8 +54,6 @@ impl winit::application::ApplicationHandler for App {
             let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
             
             self.window_position = window.outer_position().unwrap_or_default();
-            println!("DEBUG: Initial window position: {:?}", self.window_position);
-            println!("DEBUG: Monitor size: {:?}", self.monitor_size);
             
             let context = Context::new(window.clone()).unwrap();
             let surface = Surface::new(&context, window.clone()).unwrap();
@@ -85,7 +78,6 @@ impl winit::application::ApplicationHandler for App {
                 self.redraw();
             }
             WindowEvent::Moved(position) => {
-                println!("DEBUG: Window moved to: {:?}", position);
                 self.window_position = position;
                 self.redraw();
             }
@@ -119,7 +111,6 @@ impl App {
             // Check current position vs stored position
             let current_pos = window.outer_position().unwrap_or_default();
             if current_pos != self.window_position {
-                println!("DEBUG: Position mismatch! Stored: {:?}, Current: {:?}", self.window_position, current_pos);
                 self.window_position = current_pos;
             }
             
@@ -128,7 +119,6 @@ impl App {
             let monitor_height = self.monitor_size.height as i32;
             
             // Draw green boundaries where appropriate
-            let mut boundary_pixels = 0;
             for y in 0..height {
                 for x in 0..width {
                     let idx = (y * width + x) as usize;
@@ -160,25 +150,19 @@ impl App {
                     
                     if draw_green {
                         buffer[idx] = 0xFF00FF00; // Green
-                        boundary_pixels += 1;
                     }
                 }
             }
             
-            if boundary_pixels > 0 {
-                println!("DEBUG: Drew {} boundary pixels", boundary_pixels);
-            }
             
-            // Test text rendering - position at screen center
-            let screen_center_x = monitor_width / 2;
-            let screen_center_y = monitor_height / 2;
+            // Position text way off screen above the monitor
+            let off_screen_x = monitor_width / 2; // Keep horizontally centered
+            let off_screen_y = -(monitor_height as i32) - 1000; // Well above screen
             
-            // Convert screen coordinates to window coordinates
-            let text_x = screen_center_x - pos.x - 50; // -50 to roughly center the text
-            let text_y = screen_center_y - pos.y;
+            // Convert off-screen coordinates to window coordinates
+            let text_x = off_screen_x - pos.x;
+            let text_y = off_screen_y - pos.y;
             
-            println!("DEBUG: Window pos: {:?}, Screen center: ({}, {}), Text pos: ({}, {})", 
-                     pos, screen_center_x, screen_center_y, text_x, text_y);
             
             Self::draw_text(&mut buffer, text_x, text_y, width);
             
@@ -187,14 +171,11 @@ impl App {
     }
     
     fn draw_text(buffer: &mut [u32], x: i32, y: i32, buffer_width: u32) {
-        const TEXT_SOURCE: &str = "Hello_World{}";
         const SCALE: i32 = 3;
         let mut offset_x = 0;
-        for byte in TEXT_SOURCE.bytes() {
-            if let Some(char_data) = FONT_DATA.get(&byte) {
-                Self::draw_char(buffer, x + offset_x, y, char_data, buffer_width, SCALE);
-                offset_x += 6 * SCALE; // 5 pixels wide + 1 pixel spacing, scaled
-            }
+        for char_data in TEXT_BITMAPS.iter() {
+            Self::draw_char(buffer, x + offset_x, y, char_data, buffer_width, SCALE);
+            offset_x += 6 * SCALE; // 5 pixels wide + 1 pixel spacing, scaled
         }
     }
     
@@ -221,10 +202,66 @@ impl App {
     }
 }
 
+const fn string_to_bytes<const N:usize>(s: &str) -> Option<[u8; N]> {
+    if s.len() == N {
+        let mut i = 0;
+        let mut out: [u8; N] = [0; N];
+        while i < N {
+            out[i] = s.as_bytes()[i];
+            i += 1;
+        }
+        Some(out)
+    } else {
+        None
+    }
+}
 
-const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
+const LEN: usize = 28;
+const TEXT_SOURCE: [u8;LEN] = string_to_bytes("ictf{Teeheehee_you_found_me}").unwrap();
+
+const fn text_to_bitmap<const N:usize>(text: &[u8;N]) -> Option<[[[bool; 5]; 8]; N]> {
+    let mut result = [[[false; 5]; 8]; N];
+    let mut i = 0;
+    while i < N {
+        let char = text[i];
+        if let Some(char_index) = index_u8(&LETTER_DATA, char) {
+            result[i] = FONT_DATA[char_index];
+        } else {
+            return None; // Invalid character
+        }
+        i+= 1;
+    }
+    Some(result)
+}
+
+const fn index_u8<const N: usize>(arr: &[u8; N], element: u8) -> Option<usize> {
+    let l = arr.len();
+    let mut i = 0;
+    while i < l {
+        if arr[i] == element {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+const TEXT_BITMAPS: [[[bool; 5]; 8]; LEN] = text_to_bitmap(&TEXT_SOURCE).unwrap();
+
+const LETTER_DATA: [u8; 26 + 26 + 4] = [
+    // Uppercase letters A-Z
+    b'A', b'B', b'C', b'D', b'E', b'F', b'G', b'H', b'I', b'J', b'K', b'L', b'M',
+    b'N', b'O', b'P', b'Q', b'R', b'S', b'T', b'U', b'V', b'W', b'X', b'Y', b'Z',
+    // Lowercase letters a-z
+    b'a', b'b', b'c', b'd', b'e', b'f', b'g', b'h', b'i', b'j', b'k', b'l', b'm',
+    b'n', b'o', b'p', b'q', b'r', b's', b't', b'u', b'v', b'w', b'x', b'y', b'z',
+    // Special characters: space, underscore, curly braces
+    b'{', b'}', b'_', b' ',
+];
+
+const FONT_DATA: [[[bool; 5]; 8];26+26+4] = [
     // Uppercase letters
-    b'A' => [
+    [
         [false, true, true, true, false],
         [true, false, false, false, true],
         [true, false, false, false, true],
@@ -234,7 +271,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, false, true],
         [false, false, false, false, false],
     ],
-    b'B' => [
+    [
         [true, true, true, true, false],
         [true, false, false, false, true],
         [true, false, false, false, true],
@@ -244,7 +281,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, true, true, true, false],
         [false, false, false, false, false],
     ],
-    b'C' => [
+    [
         [false, true, true, true, false],
         [true, false, false, false, true],
         [true, false, false, false, false],
@@ -254,7 +291,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, true, false],
         [false, false, false, false, false],
     ],
-    b'D' => [
+    [
         [true, true, true, false, false],
         [true, false, false, true, false],
         [true, false, false, false, true],
@@ -264,7 +301,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, true, true, false, false],
         [false, false, false, false, false],
     ],
-    b'E' => [
+    [
         [true, true, true, true, true],
         [true, false, false, false, false],
         [true, false, false, false, false],
@@ -274,7 +311,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, true, true, true, true],
         [false, false, false, false, false],
     ],
-    b'F' => [
+    [
         [true, true, true, true, true],
         [true, false, false, false, false],
         [true, false, false, false, false],
@@ -284,7 +321,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, false, false],
         [false, false, false, false, false],
     ],
-    b'G' => [
+    [
         [false, true, true, true, false],
         [true, false, false, false, true],
         [true, false, false, false, false],
@@ -294,7 +331,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, true, false],
         [false, false, false, false, false],
     ],
-    b'H' => [
+    [
         [true, false, false, false, true],
         [true, false, false, false, true],
         [true, false, false, false, true],
@@ -304,7 +341,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, false, true],
         [false, false, false, false, false],
     ],
-    b'I' => [
+    [
         [false, true, true, true, false],
         [false, false, true, false, false],
         [false, false, true, false, false],
@@ -314,7 +351,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, true, false],
         [false, false, false, false, false],
     ],
-    b'J' => [
+    [
         [false, false, false, false, true],
         [false, false, false, false, true],
         [false, false, false, false, true],
@@ -324,7 +361,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, true, false],
         [false, false, false, false, false],
     ],
-    b'K' => [
+    [
         [true, false, false, false, true],
         [true, false, false, true, false],
         [true, false, true, false, false],
@@ -334,7 +371,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, false, true],
         [false, false, false, false, false],
     ],
-    b'L' => [
+    [
         [true, false, false, false, false],
         [true, false, false, false, false],
         [true, false, false, false, false],
@@ -344,7 +381,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, true, true, true, true],
         [false, false, false, false, false],
     ],
-    b'M' => [
+    [
         [true, false, false, false, true],
         [true, true, false, true, true],
         [true, false, true, false, true],
@@ -354,7 +391,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, false, true],
         [false, false, false, false, false],
     ],
-    b'N' => [
+    [
         [true, false, false, false, true],
         [true, true, false, false, true],
         [true, false, true, false, true],
@@ -364,7 +401,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, false, true],
         [false, false, false, false, false],
     ],
-    b'O' => [
+    [
         [false, true, true, true, false],
         [true, false, false, false, true],
         [true, false, false, false, true],
@@ -374,7 +411,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, true, false],
         [false, false, false, false, false],
     ],
-    b'P' => [
+    [
         [true, true, true, true, false],
         [true, false, false, false, true],
         [true, false, false, false, true],
@@ -384,7 +421,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, false, false],
         [false, false, false, false, false],
     ],
-    b'Q' => [
+    [
         [false, true, true, true, false],
         [true, false, false, false, true],
         [true, false, false, false, true],
@@ -394,7 +431,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, false, true],
         [false, false, false, false, false],
     ],
-    b'R' => [
+    [
         [true, true, true, true, false],
         [true, false, false, false, true],
         [true, false, false, false, true],
@@ -404,7 +441,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, false, true],
         [false, false, false, false, false],
     ],
-    b'S' => [
+    [
         [false, true, true, true, false],
         [true, false, false, false, true],
         [true, false, false, false, false],
@@ -414,7 +451,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, true, false],
         [false, false, false, false, false],
     ],
-    b'T' => [
+    [
         [true, true, true, true, true],
         [false, false, true, false, false],
         [false, false, true, false, false],
@@ -424,7 +461,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, false, true, false, false],
         [false, false, false, false, false],
     ],
-    b'U' => [
+    [
         [true, false, false, false, true],
         [true, false, false, false, true],
         [true, false, false, false, true],
@@ -434,7 +471,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, true, false],
         [false, false, false, false, false],
     ],
-    b'V' => [
+    [
         [true, false, false, false, true],
         [true, false, false, false, true],
         [true, false, false, false, true],
@@ -444,7 +481,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, false, true, false, false],
         [false, false, false, false, false],
     ],
-    b'W' => [
+    [
         [true, false, false, false, true],
         [true, false, false, false, true],
         [true, false, false, false, true],
@@ -454,7 +491,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, false, true],
         [false, false, false, false, false],
     ],
-    b'X' => [
+    [
         [true, false, false, false, true],
         [false, true, false, true, false],
         [false, false, true, false, false],
@@ -464,7 +501,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, false, true],
         [false, false, false, false, false],
     ],
-    b'Y' => [
+    [
         [true, false, false, false, true],
         [false, true, false, true, false],
         [false, false, true, false, false],
@@ -474,7 +511,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, false, true, false, false],
         [false, false, false, false, false],
     ],
-    b'Z' => [
+    [
         [true, true, true, true, true],
         [false, false, false, false, true],
         [false, false, false, true, false],
@@ -486,7 +523,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
     ],
     
     // Lowercase letters  
-    b'a' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [false, true, true, true, false],
@@ -496,7 +533,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, true, true],
         [false, false, false, false, false],
     ],
-    b'b' => [
+    [
         [true, false, false, false, false],
         [true, false, false, false, false],
         [true, true, true, true, false],
@@ -506,7 +543,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, true, true, true, false],
         [false, false, false, false, false],
     ],
-    b'c' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [false, true, true, true, false],
@@ -516,7 +553,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, true, false],
         [false, false, false, false, false],
     ],
-    b'd' => [
+    [
         [false, false, false, false, true],
         [false, false, false, false, true],
         [false, true, true, true, true],
@@ -526,7 +563,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, true, true],
         [false, false, false, false, false],
     ],
-    b'e' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [false, true, true, true, false],
@@ -536,7 +573,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, true, false],
         [false, false, false, false, false],
     ],
-    b'f' => [
+    [
         [false, false, true, true, false],
         [false, true, false, false, true],
         [false, true, false, false, false],
@@ -546,7 +583,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, false, false, false],
         [false, false, false, false, false],
     ],
-    b'g' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [false, true, true, true, true],
@@ -556,7 +593,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, false, false, false, true],
         [false, true, true, true, false],
     ],
-    b'h' => [
+    [
         [true, false, false, false, false],
         [true, false, false, false, false],
         [true, true, true, true, false],
@@ -566,7 +603,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, false, true],
         [false, false, false, false, false],
     ],
-    b'i' => [
+    [
         [false, false, true, false, false],
         [false, false, false, false, false],
         [false, true, true, false, false],
@@ -576,7 +613,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, true, false],
         [false, false, false, false, false],
     ],
-    b'j' => [
+    [
         [false, false, false, true, false],
         [false, false, false, false, false],
         [false, false, true, true, false],
@@ -586,7 +623,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, true, false],
         [false, true, true, false, false],
     ],
-    b'k' => [
+    [
         [true, false, false, false, false],
         [true, false, false, false, false],
         [true, false, false, true, false],
@@ -596,7 +633,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, true, false],
         [false, false, false, false, false],
     ],
-    b'l' => [
+    [
         [false, true, true, false, false],
         [false, false, true, false, false],
         [false, false, true, false, false],
@@ -606,7 +643,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, true, false],
         [false, false, false, false, false],
     ],
-    b'm' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [true, true, false, true, false],
@@ -616,7 +653,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, true, false, true],
         [false, false, false, false, false],
     ],
-    b'n' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [true, true, true, true, false],
@@ -626,7 +663,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, false, true],
         [false, false, false, false, false],
     ],
-    b'o' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [false, true, true, true, false],
@@ -636,7 +673,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, true, false],
         [false, false, false, false, false],
     ],
-    b'p' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [true, true, true, true, false],
@@ -646,7 +683,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, false, false],
         [true, false, false, false, false],
     ],
-    b'q' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [false, true, true, true, true],
@@ -656,7 +693,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, false, false, false, true],
         [false, false, false, false, true],
     ],
-    b'r' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [true, false, true, true, false],
@@ -666,7 +703,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, false, false],
         [false, false, false, false, false],
     ],
-    b's' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [false, true, true, true, false],
@@ -676,7 +713,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, true, true, true, false],
         [false, false, false, false, false],
     ],
-    b't' => [
+    [
         [false, true, false, false, false],
         [false, true, false, false, false],
         [true, true, true, false, false],
@@ -686,7 +723,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, false, true, true, false],
         [false, false, false, false, false],
     ],
-    b'u' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [true, false, false, false, true],
@@ -696,7 +733,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, true, true],
         [false, false, false, false, false],
     ],
-    b'v' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [true, false, false, false, true],
@@ -706,7 +743,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, false, true, false, false],
         [false, false, false, false, false],
     ],
-    b'w' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [true, false, false, false, true],
@@ -716,7 +753,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, false, true, false],
         [false, false, false, false, false],
     ],
-    b'x' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [true, false, false, false, true],
@@ -726,7 +763,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, false, false, false, true],
         [false, false, false, false, false],
     ],
-    b'y' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [true, false, false, false, true],
@@ -736,7 +773,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, false, false, false, true],
         [false, true, true, true, false],
     ],
-    b'z' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [true, true, true, true, true],
@@ -748,7 +785,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
     ],
     
     // Special characters
-    b'{' => [
+    [
         [false, false, true, true, false],
         [false, true, false, false, false],
         [false, true, false, false, false],
@@ -758,7 +795,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, false, true, true, false],
         [false, false, false, false, false],
     ],
-    b'}' => [
+    [
         [false, true, true, false, false],
         [false, false, false, true, false],
         [false, false, false, true, false],
@@ -768,7 +805,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, true, true, false, false],
         [false, false, false, false, false],
     ],
-    b'_' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [false, false, false, false, false],
@@ -778,7 +815,7 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [true, true, true, true, true],
         [false, false, false, false, false],
     ],
-    b' ' => [
+    [
         [false, false, false, false, false],
         [false, false, false, false, false],
         [false, false, false, false, false],
@@ -788,4 +825,4 @@ const FONT_DATA: phf::Map<u8, [[bool; 5]; 8]> = phf::phf_map! {
         [false, false, false, false, false],
         [false, false, false, false, false],
     ],
-};
+];
