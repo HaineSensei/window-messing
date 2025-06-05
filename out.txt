@@ -1,0 +1,11 @@
+DEBUG: Found 1 monitors
+DEBUG: Primary monitor size: PhysicalSize { width: 1280, height: 800 }
+DEBUG: Primary monitor name: Virtual-1
+DEBUG: Initial window position: PhysicalPosition { x: 0, y: 0 }
+DEBUG: Monitor size: PhysicalSize { width: 1280, height: 800 }
+DEBUG: Drew 94000 boundary pixels
+DEBUG: Window pos: PhysicalPosition { x: 0, y: 0 }, Screen center: (640, 400), Text pos: (590, 400)
+DEBUG: Drew 94000 boundary pixels
+DEBUG: Window pos: PhysicalPosition { x: 0, y: 0 }, Screen center: (640, 400), Text pos: (590, 400)
+DEBUG: Drew 90500 boundary pixels
+DEBUG: Window pos: PhysicalPosition { x: 0, y: 0 }, Screen center: (640, 400), Text pos: (590, 400)
