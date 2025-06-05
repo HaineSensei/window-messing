@@ -37,8 +37,13 @@ impl winit::application::ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.window.is_none() {
             let monitors: Vec<_> = event_loop.available_monitors().collect();
+            println!("DEBUG: Found {} monitors", monitors.len());
             let primary_monitor = monitors.first().unwrap();
             let monitor_size = primary_monitor.size();
+            println!("DEBUG: Primary monitor size: {:?}", monitor_size);
+            if let Some(name) = primary_monitor.name() {
+                println!("DEBUG: Primary monitor name: {}", name);
+            }
             self.monitor_size = monitor_size;
             
             let window_size = winit::dpi::PhysicalSize::new(
@@ -54,6 +59,8 @@ impl winit::application::ApplicationHandler for App {
             let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
             
             self.window_position = window.outer_position().unwrap_or_default();
+            println!("DEBUG: Initial window position: {:?}", self.window_position);
+            println!("DEBUG: Monitor size: {:?}", self.monitor_size);
             
             let context = Context::new(window.clone()).unwrap();
             let surface = Surface::new(&context, window.clone()).unwrap();
@@ -78,6 +85,7 @@ impl winit::application::ApplicationHandler for App {
                 self.redraw();
             }
             WindowEvent::Moved(position) => {
+                println!("DEBUG: Window moved to: {:?}", position);
                 self.window_position = position;
                 self.redraw();
             }
@@ -107,11 +115,20 @@ impl App {
             
             // Calculate which edges are near the screen boundary (100px threshold)
             const BOUNDARY_SIZE: i32 = 100;
+            
+            // Check current position vs stored position
+            let current_pos = window.outer_position().unwrap_or_default();
+            if current_pos != self.window_position {
+                println!("DEBUG: Position mismatch! Stored: {:?}, Current: {:?}", self.window_position, current_pos);
+                self.window_position = current_pos;
+            }
+            
             let pos = self.window_position;
             let monitor_width = self.monitor_size.width as i32;
             let monitor_height = self.monitor_size.height as i32;
             
             // Draw green boundaries where appropriate
+            let mut boundary_pixels = 0;
             for y in 0..height {
                 for x in 0..width {
                     let idx = (y * width + x) as usize;
@@ -143,8 +160,13 @@ impl App {
                     
                     if draw_green {
                         buffer[idx] = 0xFF00FF00; // Green
+                        boundary_pixels += 1;
                     }
                 }
+            }
+            
+            if boundary_pixels > 0 {
+                println!("DEBUG: Drew {} boundary pixels", boundary_pixels);
             }
             
             // Test text rendering - position at screen center
@@ -154,6 +176,9 @@ impl App {
             // Convert screen coordinates to window coordinates
             let text_x = screen_center_x - pos.x - 50; // -50 to roughly center the text
             let text_y = screen_center_y - pos.y;
+            
+            println!("DEBUG: Window pos: {:?}, Screen center: ({}, {}), Text pos: ({}, {})", 
+                     pos, screen_center_x, screen_center_y, text_x, text_y);
             
             Self::draw_text(&mut buffer, text_x, text_y, width);
             
